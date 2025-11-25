@@ -1,0 +1,17 @@
+# Azure Configuration
+location     = "eastus"
+environment  = "dev"
+project_name = "privatelink"
+
+# Cosmos DB Configuration (must be globally unique)
+cosmos_db_name = "cosmos-privatelink-dev-001"
+
+# Storage Account Configuration (must be globally unique, lowercase, no hyphens)
+storage_account_name = "stprivatelinkdev001"
+
+# Container Registry Configuration (must be globally unique, alphanumeric only)
+container_registry_name = "acrprivatelinkdev001"
+
+# Container App Configuration
+container_app_name = "api-app"
+docker_image_tag   = "latest"

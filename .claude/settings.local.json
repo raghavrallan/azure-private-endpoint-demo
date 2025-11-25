@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(terraform init:*)",
+      "Bash(terraform plan:*)",
+      "Bash(terraform apply:*)",
+      "Bash(az containerapp env delete:*)",
+      "Bash(az acr login:*)",
+      "Bash(docker build:*)",
+      "Bash(docker push:*)",
+      "Bash(az containerapp delete:*)",
+      "Bash(curl:*)",
+      "Bash(az cosmosdb show:*)",
+      "Bash(az storage account show:*)",
+      "Bash(az cosmosdb update:*)",
+      "Bash(az storage account update:*)",
+      "Bash(az containerapp update:*)",
+      "Bash(az containerapp revision list:*)",
+      "Bash(az containerapp revision restart:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
