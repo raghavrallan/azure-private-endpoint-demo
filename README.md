@@ -188,6 +188,44 @@ curl $CONTAINER_APP_URL/test-cosmos
 curl $CONTAINER_APP_URL/test-storage
 ```
 
+### Accessing Storage Containers from Azure Portal
+
+The Storage Account is configured with firewall rules that allow access only from specific IPs. To access storage containers from the Azure Portal or locally, you need to add your IP address:
+
+**Step 1: Get your public IP**
+```bash
+# Get your current public IP
+curl -4 ifconfig.me
+```
+
+**Step 2: Add your IP to the storage account firewall**
+```bash
+# Replace with your actual IP and resource values
+az storage account network-rule add \
+  --account-name <your-storage-account-name> \
+  --resource-group rg-privatelink-storage-dev \
+  --ip-address <your-public-ip>
+```
+
+**Example:**
+```bash
+az storage account network-rule add \
+  --account-name stpldev2024001 \
+  --resource-group rg-privatelink-storage-dev \
+  --ip-address 203.0.113.45
+```
+
+**Step 3: Verify access**
+```bash
+# List containers to verify access
+az storage container list \
+  --account-name <your-storage-account-name> \
+  --auth-mode login \
+  --query "[].name" -o table
+```
+
+**Note**: The Container App's outbound IP is automatically added to the firewall rules during deployment. If you're getting 403 errors when accessing storage containers, it means your IP hasn't been added to the allowed list yet.
+
 ## API Endpoints
 
 ### GET /
@@ -265,11 +303,31 @@ Private Endpoints provide secure connectivity between Azure services by using pr
 
 ## Security Considerations
 
-- **Public Access Disabled**: Both Cosmos DB and Storage Account have public access disabled
-- **VNet Integration**: Container App communicates only through VNet
-- **Private DNS**: Custom DNS zones ensure private resolution
-- **Secrets Management**: Sensitive values stored as Container App secrets
+- **Cosmos DB**: Public network access is completely disabled. Access is only through private endpoint.
+- **Storage Account**: Configured with firewall rules (default action: Deny)
+  - Container App outbound IP is whitelisted
+  - Private endpoint is enabled for VNet access
+  - Only specified IPs can access via public endpoint
+  - All other public access is blocked
+- **VNet Integration**: Container App communicates with services through private endpoints
+- **Private DNS**: Custom DNS zones ensure private IP resolution for services
+- **Secrets Management**: Sensitive values (Cosmos DB key, storage connection string) stored as Container App secrets
 - **Premium SKUs**: Container Registry uses Premium SKU for enterprise features
+
+### Network Security Model
+
+```
+Public Internet Access:
+├── Cosmos DB: ❌ Completely Disabled
+└── Storage Account: ⚠️ Firewall-Restricted
+    ├── Default Action: Deny
+    ├── Allowed IPs: Container App + Your IP
+    └── Azure Services: Bypass Enabled
+
+Private Endpoint Access:
+├── Cosmos DB: ✅ Active (only access method)
+└── Storage Account: ✅ Active (preferred method)
+```
 
 ## Cost Optimization
 
@@ -307,11 +365,51 @@ terraform destroy
 
 ## Troubleshooting
 
+### Issue: 403 Forbidden when accessing Storage Containers
+**Problem**: Getting "403 Forbidden" or "Authorization failed" when trying to access storage containers from Azure Portal.
+
+**Solution**: Your IP address needs to be added to the storage account firewall rules.
+
+```bash
+# Get your current public IP
+curl -4 ifconfig.me
+
+# Add your IP to storage firewall
+az storage account network-rule add \
+  --account-name <storage-account-name> \
+  --resource-group rg-privatelink-storage-dev \
+  --ip-address <your-ip-address>
+
+# Verify the rule was added
+az storage account show \
+  --name <storage-account-name> \
+  --resource-group rg-privatelink-storage-dev \
+  --query "networkRuleSet.ipRules"
+```
+
 ### Issue: Terraform fails with "name already exists"
 **Solution**: Azure resource names must be globally unique. Change the names in `terraform.tfvars`.
 
 ### Issue: Container App shows "Provisioning failed"
 **Solution**: Check logs with `az containerapp logs show` or verify VNet subnet has correct delegation.
+
+### Issue: Container App cannot access storage
+**Problem**: App logs show connection errors to storage account.
+
+**Solution**: Verify the Container App's outbound IP is in the storage firewall rules:
+```bash
+# Get Container App outbound IP
+az containerapp show \
+  --name <app-name> \
+  --resource-group rg-privatelink-app-dev \
+  --query "properties.outboundIpAddresses" -o json
+
+# Add the IP to storage firewall
+az storage account network-rule add \
+  --account-name <storage-account-name> \
+  --resource-group rg-privatelink-storage-dev \
+  --ip-address <container-app-ip>
+```
 
 ### Issue: Private endpoint connection fails
 **Solution**:

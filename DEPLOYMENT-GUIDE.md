@@ -65,8 +65,8 @@ This project demonstrates a complete Azure infrastructure setup with **TRUE priv
                              ▼                      ▼
                     ┌────────────────┐    ┌────────────────┐
                     │   Cosmos DB    │    │ Storage Account│
-                    │ (Public Access │    │ (Public Access │
-                    │   DISABLED)    │    │   DISABLED)    │
+                    │ (Public Access │    │  (Firewall:    │
+                    │   DISABLED)    │    │  Default Deny) │
                     └────────────────┘    └────────────────┘
 
 External Resources:
@@ -79,15 +79,20 @@ External Resources:
 ### Key Security Features
 
 ✅ **TRUE Private Connectivity**
-- Cosmos DB: Public access **DISABLED** ← Traffic only via Private Endpoint
-- Storage Account: Public access **DISABLED** ← Traffic only via Private Endpoint
-- Container App: Runs in VNet-integrated subnet
-- All traffic stays within Azure backbone (never touches public internet)
+- **Cosmos DB**: Public access **COMPLETELY DISABLED** ← Only accessible via Private Endpoint
+- **Storage Account**: Firewall enabled with **Default Deny** + Whitelisted IPs only
+  - Private endpoint active for VNet access
+  - Container App IP whitelisted (app functionality)
+  - Your IP whitelisted (portal/CLI access)
+  - All other public access blocked
+- **Container App**: Runs in VNet-integrated subnet
+- All backend traffic stays within Azure backbone
 
 ✅ **Network Isolation**
 - Separate subnets for private endpoints and workloads
-- Private DNS zones for name resolution
+- Private DNS zones for name resolution to private IPs
 - No public IPs for backend services
+- Firewall rules enforce IP-based access control
 
 ---
 
@@ -198,7 +203,8 @@ tf-private-endpoint/
 - **Storage Account**: Standard LRS
   - Container: `testcontainer`
   - Account Kind: StorageV2
-  - **Public Access**: DISABLED ✅
+  - **Firewall**: Default Deny with IP Whitelist ✅
+  - **Private Endpoint**: Enabled for VNet access ✅
 
 ### Container Resources
 - **Azure Container Registry**: Premium SKU (required for private endpoints)
@@ -329,27 +335,55 @@ terraform apply -auto-approve
 
 This will create the Container App now that the image exists.
 
-### Step 8: Disable Public Access (Enforce Private Endpoints)
+### Step 8: Configure Security Settings
 
 ```bash
 # Get resource names
 COSMOS_NAME=$(terraform output -raw cosmos_db_endpoint | cut -d'/' -f3 | cut -d'.' -f1)
 STORAGE_NAME=$(terraform output -raw storage_account_name)
 
-# Disable Cosmos DB public access
+# Disable Cosmos DB public access (completely blocks public access)
 az cosmosdb update \
   --name $COSMOS_NAME \
   --resource-group rg-privatelink-cosmos-dev \
   --public-network-access Disabled
 
-# Disable Storage Account public access
+# Configure Storage Account with firewall (allows specific IPs only)
+# Get Container App outbound IP
+CONTAINER_APP_IP=$(az containerapp show \
+  --name api-app \
+  --resource-group rg-privatelink-app-dev \
+  --query "properties.outboundIpAddresses[0]" -o tsv)
+
+# Get your current public IP
+YOUR_IP=$(curl -4 -s ifconfig.me)
+
+# Enable public access with firewall rules (default deny)
 az storage account update \
   --name $STORAGE_NAME \
   --resource-group rg-privatelink-storage-dev \
-  --public-network-access Disabled
+  --public-network-access Enabled \
+  --default-action Deny
+
+# Add Container App IP to firewall
+az storage account network-rule add \
+  --account-name $STORAGE_NAME \
+  --resource-group rg-privatelink-storage-dev \
+  --ip-address $CONTAINER_APP_IP
+
+# Add your IP to access from Azure Portal/locally
+az storage account network-rule add \
+  --account-name $STORAGE_NAME \
+  --resource-group rg-privatelink-storage-dev \
+  --ip-address $YOUR_IP
 ```
 
-**IMPORTANT**: This step ensures that Cosmos DB and Storage Account can **ONLY** be accessed via private endpoints!
+**IMPORTANT Security Configuration**:
+- **Cosmos DB**: Public access completely disabled - ONLY accessible via private endpoint
+- **Storage Account**: Firewall enabled with default deny - Only whitelisted IPs can access
+  - Container App IP is whitelisted (allows app to function)
+  - Your IP is whitelisted (allows portal/local access)
+  - Private endpoint is active for VNet-based access
 
 ### Step 9: Get the Application URL
 
@@ -443,9 +477,12 @@ az cosmosdb show \
 az storage account show \
   --name stpldev2024001 \
   --resource-group rg-privatelink-storage-dev \
-  --query "publicNetworkAccess"
+  --query "{publicAccess: publicNetworkAccess, defaultAction: networkRuleSet.defaultAction, ipRules: networkRuleSet.ipRules}"
 
-# Should return: "Disabled"
+# Should return:
+# publicAccess: "Enabled"
+# defaultAction: "Deny"
+# ipRules: [array of allowed IPs]
 ```
 
 #### 2. Check Private Endpoint Connections
@@ -468,12 +505,12 @@ az storage account show \
 # Should return: ["Approved"]
 ```
 
-#### 3. Test from Outside the VNet (Should Fail)
+#### 3. Test from Outside the VNet
 
-Try to access Cosmos DB or Storage from your local machine (outside the VNet):
+Try to access Cosmos DB from your local machine (outside the VNet):
 
 ```bash
-# This should FAIL because public access is disabled
+# Cosmos DB: This should FAIL because public access is completely disabled
 az cosmosdb sql database show \
   --account-name cosmos-pl-dev-2024 \
   --name testdb \
@@ -481,6 +518,8 @@ az cosmosdb sql database show \
 
 # Error: "ForbiddenError" - This proves public access is blocked!
 ```
+
+**Note**: Storage Account access from outside the VNet depends on IP whitelisting. If your IP is added to the firewall rules (Step 8), you'll have access. Otherwise, access will be denied by the firewall.
 
 #### 4. Verify DNS Resolution
 
@@ -617,17 +656,53 @@ container_registry_name = "acrplyourname2024"
 2. Verify DNS zones are linked to VNet
 3. Check Container App logs for detailed errors
 
-### Issue 4: Public Access Still Enabled
+### Issue 4: Configure Security Settings
 
-**Problem**: You want to ensure ONLY private access
+**Problem**: You want to ensure secure access with private endpoints
 
-**Solution**: Run Step 8 to disable public access:
+**Solution**: Run Step 8 to configure security:
 ```bash
+# Cosmos DB: Disable public access completely
 az cosmosdb update --name COSMOS_NAME --resource-group rg-privatelink-cosmos-dev --public-network-access Disabled
-az storage account update --name STORAGE_NAME --resource-group rg-privatelink-storage-dev --public-network-access Disabled
+
+# Storage Account: Enable firewall with IP whitelist
+az storage account update --name STORAGE_NAME --resource-group rg-privatelink-storage-dev --public-network-access Enabled --default-action Deny
+
+# Add Container App IP and your IP to storage firewall (see Step 8 for details)
 ```
 
-### Issue 5: Subnet Delegation Error
+### Issue 5: 403 Forbidden When Accessing Storage Containers
+
+**Problem**: Getting "403 Forbidden" or "Authorization failed" when trying to access storage containers from Azure Portal or CLI.
+
+**Solution**: Your IP address needs to be added to the storage account firewall rules.
+
+```bash
+# Get your current public IP
+curl -4 ifconfig.me
+
+# Add your IP to storage firewall
+az storage account network-rule add \
+  --account-name STORAGE_NAME \
+  --resource-group rg-privatelink-storage-dev \
+  --ip-address YOUR_IP_ADDRESS
+
+# Verify the rule was added
+az storage account show \
+  --name STORAGE_NAME \
+  --resource-group rg-privatelink-storage-dev \
+  --query "networkRuleSet.ipRules"
+
+# Test access
+az storage container list \
+  --account-name STORAGE_NAME \
+  --auth-mode login \
+  --query "[].name" -o table
+```
+
+**Note**: The Container App's outbound IP is automatically added during Step 8. You only need to add additional IPs for portal/local access.
+
+### Issue 6: Subnet Delegation Error
 
 **Error**: `ManagedEnvironmentSubnetIsDelegated`
 

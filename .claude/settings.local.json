@@ -18,7 +18,17 @@
       "Bash(az containerapp revision list:*)",
       "Bash(az containerapp revision restart:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(terraform destroy:*)",
+      "Bash(az group list:*)",
+      "Bash(az containerapp logs show:*)",
+      "Bash(az containerapp show:*)",
+      "Bash(az storage account network-rule add:*)",
+      "Bash(az storage container list:*)"
     ],
     "deny": [],
     "ask": []
