@@ -437,4 +437,4 @@ MIT License - Feel free to use this project as a template for your own infrastru
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-<!-- activity: 2026-04-02T09:13:26 -->
+<!-- activity: pr-1-azure-private-endpoint-demo -->
